@@ -68,7 +68,7 @@ def main():
         clear_cache_folder(uploaded_file_names)
     
 
-    with open('output_evg.json', 'r', encoding="UTF-8") as json_file:
+    with open('output.json', 'r', encoding="UTF-8") as json_file:
         data = json.load(json_file)
         data = sorted(data, key=lambda x: (x['level'], x['prev_num'], x['num']))
 
