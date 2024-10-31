@@ -7,6 +7,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from request import name_summarize
+from text_cleaner import clean_markdown_content
+import copy
 
 morph = pymorphy3.MorphAnalyzer()
 
@@ -40,7 +42,7 @@ def convert_to_standard_types(data):
         return data
 
 def extract_headings_by_level(text, prev_level_info, level=1):    
-    pattern = rf"(^{'#' * level} .+)(?=\n|$)\n((?:.*\n)*?(?=^#{{1,{level}}} |\Z))"
+    pattern = rf"(^{'#' * (level)} .+)(?=\n|$)\n((?:.*\n)*?(?=^#{{1,{level}}} |\Z))"
     matches = re.findall(pattern, text, re.MULTILINE)
     results = [(prev_level_info, match[0].strip(), lemmatize(match[1].strip())) for match in matches if match[1].strip()]
     return results
@@ -89,10 +91,10 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
     for i, label in enumerate(labels):
         classified_headings[label].append(headings_content[i])
 
+
     # Вывод результатов и рекурсивный вызов для подзаголовков
     for cluster_id, entries in classified_headings.items():
         print(f'\nКластер {cluster_id + 1} уровня {level}:')
-        
         additional_info = []
         headers = []
         sub_headings_content = []
@@ -101,7 +103,7 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
             headers.append(heading)
             new_prev_info = prev_info + '\n' + heading
             additional_info.append(new_prev_info)
-            sub_result = extract_headings_by_level(content, new_prev_info, level + 1)
+            sub_result = extract_headings_by_level(content, new_prev_info, level)
             for res in sub_result:
                 sub_headings_content.append(res)
         node = {}
@@ -109,11 +111,10 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
         node["num"] = cluster_id
         node["prev_num"] = prev_num
         node["data"] = headers
-        node["info"] = additional_info
+        node["info"] = copy.copy(additional_info)
         nodes[f"{level}_{cluster_id}_{prev_num}"] = node
-        # нужно запихнуть это в for, чтобы для каждого отельно sub_headings_content формировался и добавлять в некий результирующий список
         if sub_headings_content:
-            recursive_clustering(sub_result, nodes, level + 1, prev_num=cluster_id)
+            recursive_clustering(sub_headings_content, nodes, level + 1, prev_num=cluster_id)
 
 
 def process_files(files, nodes, prev_num):
@@ -127,7 +128,7 @@ def process_files(files, nodes, prev_num):
             for res in result:
                 top_level_headings_content.append(res)
 
-    recursive_clustering(top_level_headings_content, nodes, level=1, prev_num=prev_num)
+    recursive_clustering(top_level_headings_content, nodes, level=2, prev_num=prev_num)
 
 
 def generate_json():
@@ -140,10 +141,9 @@ def generate_json():
     for filename in os.listdir(directory):
         if filename.endswith('.md'):
             file_path = os.path.join(directory, filename)
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-                documents.append(content)
-                file_names.append(filename)
+            content = clean_markdown_content(file_path)
+            documents.append(content)
+            file_names.append(filename)
 
     # Обработка документов
     processed_documents = [lemmatize(process_markdown(doc)) for doc in documents]
@@ -191,6 +191,7 @@ def generate_json():
         file_names[key] = []
         for file_name in files:
             file_names[key].append(file_name)
+
 
     # Вывод результатов без названий категорий
     for category, files in classified_files.items():
