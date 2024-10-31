@@ -35,6 +35,7 @@ def validate_response(response):
         return True
     except json.JSONDecodeError:
         print('false')
+        print(data)
         return False
 
 def request_cluster_names(api, prompt, claster_dict):
