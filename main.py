@@ -1,19 +1,18 @@
 from pyvis.network import Network
 import streamlit as st
 import streamlit.components.v1 as components
-from itertools import cycle
 import os
 import time
 import json
-import model
+from model import generate_json
 
 
 # начальные цвета для перых трёх уровней 
-colors = ['#93e1d8', '#83c5be', '#edf6f9'] 
+colors = ['#c6b6d6', '#efc4d6', '#ffddd6', '#fff6e6'] 
 
 
-def generate_json(file_names):
-    model.generate_json_output(file_names)
+def generate_json_output():
+    generate_json()
 
 
 def disappearing_message(mess, sec=2):
@@ -45,9 +44,9 @@ def settings(net):
         st.title('Settings')
         net.toggle_physics(st.toggle("Physics off/on"))
         for i, color in enumerate(colors):       
-            color = st.color_picker("Pick A Color", color)
+            color = st.color_picker(f"pick a color for {i} level ", color)
             colors[i] = color
-            st.write("The current color is", color)
+            st.write(color)
 
 
 def clear_cache_folder(uploaded_file_names):
@@ -61,44 +60,68 @@ def clear_cache_folder(uploaded_file_names):
 def main():
     
     uploaded_file_names = uploader()  # Загрузчик файлов пользователя
-
     if st.session_state['file'] != uploaded_file_names:
+        print(f'Загружены файлы: {uploaded_file_names}')
         st.session_state['file'] = uploaded_file_names
-        generate_json(uploaded_file_names)  # Генерация JSON-файла
+        with st.spinner("Обработка файлов и генерация карты знаний..."):
+            generate_json_output()  # Генерация JSON-файла
         clear_cache_folder(uploaded_file_names)
     
 
-    with open('output.json', 'r', encoding="UTF-8") as json_file:
+    with open('output_evg.json', 'r', encoding="UTF-8") as json_file:
         data = json.load(json_file)
-    
+        data = sorted(data, key=lambda x: (x['level'], x['prev_num'], x['num']))
 
     net = Network(notebook=True, directed=True, cdn_resources='in_line', select_menu=True)
     settings(net)
 
-    for elem in data:
-        net.add_node(elem["data"],
-                     level=elem["level"], 
-                     title=elem["data"], 
-                     shape='box',
-                     mass=(elem["level"] + 1), 
-                     # каждые три уровня цвет будет повторятся  
-                     color=colors[elem["level"] % 3]) 
+    # Создаём узлы и словарь для быстрого доступа по (level, num)
+    node_dict = {}
+    for id, elem in enumerate(data):
+        net.add_node(n_id=id,
+                    label=elem["data"],
+                    level=elem["level"],
+                    title=str(id),
+                    shape='box',
+                    mass=(elem["level"] + 1),
+                    color=colors[elem["level"] % 4])
+        
+        # Сохраняем узел с уникальным ID
+        elem['id'] = id
+        node_dict[(elem["level"], elem["num"])] = id
 
+    # Добавляем рёбра с использованием словаря
     for elem in data:
-        if elem["prev_num"] is None:
-            continue
-        for prev_node in data:
-            if prev_node["num"] == elem["prev_num"] and elem["level"] - 1 == prev_node["level"]:
-                net.add_edge(prev_node["data"], elem["data"])
+        if elem["prev_num"] is not None:
+            prev_id = node_dict.get((elem["level"] - 1, elem["prev_num"]))
+            if prev_id is not None:
+                net.add_edge(prev_id, elem["id"])
 
+    
     st.title("Mind map")
     components.html(net.generate_html(notebook=True), height=600, width=800)
 
+    st.subheader("Поиск по ID узла")
+    node_id = st.text_input("Введите ID узла:", help='Наведитесь на узел и вы увидите ID')
+
+    if node_id:
+        try:
+            node = net.get_node(int(node_id))
+            st.write(f"Название узла:\n {node['label']}")
+            st.write("Этот узел содержит информацию в следующих файлах (в соответсвующих параграфах)")
+            st.write(data[int(node_id)]['info'])
+        except KeyError:
+            st.write("Пожалуйста, введите существующий числовой ID")    
+        except ValueError:
+            st.write("Пожалуйста, введите допустимый числовой ID")
+
+
+    
     # if 'balloons' not in st.session_state:
     #     st.session_state['balloons'] = False
-
-    # if st.button('BaLlOoNs', on_click=click_button, args=['balloons']):
+    # if st.button('BaLlOoNs'):
     #     st.balloons()
+    #     st.snow()
 
 if __name__ == "__main__":
     main()
