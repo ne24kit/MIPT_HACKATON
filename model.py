@@ -121,12 +121,11 @@ def process_files(files, nodes, prev_num):
     # Чтение и обработка указанных файлов
     top_level_headings_content = []
     for file_path in files:
-        with open(f"./cache/{file_path}", 'r', encoding='utf-8') as file:
-            file_content = file.read()
-            print(f"\nФайл: {file_path}")
-            result = extract_headings_by_level(file_content, file_path, level=1)
-            for res in result:
-                top_level_headings_content.append(res)
+        file_content = clean_markdown_content(f'./cache/{file_path}')
+        print(f"\nФайл: {file_path}")
+        result = extract_headings_by_level(file_content, file_path, level=1)
+        for res in result:
+            top_level_headings_content.append(res)
 
     recursive_clustering(top_level_headings_content, nodes, level=2, prev_num=prev_num)
 
@@ -153,13 +152,13 @@ def generate_json():
     X = vectorizer.fit_transform(processed_documents)
     
     nodes = {}
-
+    
     # добавляем начальную ноду
     node = {}
     node["num"] = 0
     node["level"] = 0
     node["prev_num"] = None
-    node["data"] = "Nothing yet"
+    node["data"] = file_names
     node["info"] = file_names
     nodes["0_0_0"] = node
 

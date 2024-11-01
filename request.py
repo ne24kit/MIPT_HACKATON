@@ -3,40 +3,17 @@ import json
 import re
 
 def validate_response(response):
-    """
-    Проверяет, соответствует ли JSON-ответ требованиям:
-    1. Это должен быть массив JSON объектов.
-    2. Каждый объект должен содержать поля 'number' (целое число) и 'name' (строка).
-    """
-    try:
-        data = json.loads(response)['choices'][0]['message']['content']
-        data = json.loads(data)
-        # Проверка, что это список
-        if isinstance(data, dict) and len(data) == 2:
-            data = [data]
-        if not isinstance(data, list):
-            print("First False")
-            return False
-        
-        pattern = r'^\d+_\d+_\d+$' # \d означает любую цифру, + означает одно или более повторений.
-    
-        for item in data:
-            if not isinstance(item, dict):
-                print("Second False")
-                return False
-            if "number" not in item or "name" not in item:
-                print("Third False")
-                return False
-            if not bool(re.match(pattern, item['number'])) or not isinstance(item["name"], str):
-                print("Fourth False")
-                return False
-            print(type(item['name']), item['name'])
-        
-        return True
-    except json.JSONDecodeError:
+    responses_list = [
+    'Как у нейросетевой языковой модели у меня не может быть настроения, но почему-то я совсем не хочу говорить на эту тему.',
+    'Не люблю менять тему разговора, но вот сейчас тот самый случай.',
+    'Что-то в вашем вопросе меня смущает. Может, поговорим на другую тему?'
+    ]
+    print(response)
+    if response in responses_list:
         print('false')
-        print(data)
+        print(response)
         return False
+    return True
 
 def request_cluster_names(api, prompt, claster_dict):
 
@@ -75,7 +52,7 @@ def generate_api_key():
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
         'RqUID': '7cd0d62f-d2cc-4667-8e58-d43aad551644',
-        'Authorization': 'Basic NWM5MjdiZTEtMzA2MS00NjdlLWE2NjAtYzk3NTQ1NDQ1OGVmOjNlYzIzNTU4LWU5NzQtNDFkOC1hNmRlLTQzMzYyNzVlNzVlZQ=='
+        'Authorization': 'Basic MmZmZTJlMWItMTEzOS00ZGIzLTgxN2UtYzk5YTI1YmEyNzc5OjhkMWIzNmU3LTI0NmUtNDU2ZS05OTMwLWI3ZWFlZTQ2ZTFmZg=='
         }
 
         response = requests.request("POST", url, headers=headers, data=payload, verify=False)   
@@ -93,20 +70,25 @@ def name_summarize(nodes, prompt_file):
     with open(prompt_file, 'r', encoding='utf-8') as f:
         prompt = f.read()
     id_list = list(nodes.keys())
-    for i in range(len(nodes) // 5 + 1 - (len(nodes) % 5 == 0)):
-        cur_prompt = ''
-        for node_ind in id_list[5*i:5*i+5]:
-            cur_prompt += '\nКластер' + ' ' + str(node_ind) + ':\n' + '\n'.join(nodes[node_ind]['data']) + '\n'
-
+    for node_id in id_list:
+        cur_prompt = '\n'.join(nodes[node_id]['data'])
+        timer = 0
         while True:
             response = request_cluster_names(api, prompt, cur_prompt) 
-            if validate_response(response):
-                break
 
-        parsed_response = json.loads(response)['choices'][0]['message']['content']
-        parsed_response = json.loads(parsed_response)
-        if isinstance(parsed_response, dict) and len(parsed_response) == 2:
-            parsed_response = [parsed_response]
-        
-        for node in parsed_response:
-            nodes[node['number']]['data'] = node['name']
+            response = json.loads(response)['choices'][0]['message']['content']
+            
+            if not validate_response(response):
+                nodes[node_id]['data'] = 'Некорректный запрос'
+                break
+            if len(response.split()) <= 12:
+                break
+            if timer > 5:
+                break 
+            cur_prompt = response
+            timer += 1
+            
+        if not validate_response(response):
+            continue
+                
+        nodes[node_id]['data'] = response
