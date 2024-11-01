@@ -6,4 +6,4 @@ streamlit run .\main.py
 
 ### Ссылка на сайт:
 
-[Карта знаний](https://mipthackaton-jcwnkkmchjf5fcszroeirs.streamlit.app/)
+[Карта знаний](https://mipthackaton-mindmap1.streamlit.app/)
