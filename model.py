@@ -41,14 +41,14 @@ def convert_to_standard_types(data):
     else:
         return data
 
-def extract_headings_by_level(text, prev_level_info, level=1):    
-    pattern = rf"(^{'#' * (level)} .+)(?=\n|$)\n((?:.*\n)*?(?=^#{{1,{level}}} |\Z))"
+def extract_headings_by_level(text, prev_level_info, num_hash):    
+    pattern = rf"(^{'#' * (num_hash)} .+)(?=\n|$)\n((?:.*\n)*?(?=^#{{1,{num_hash}}} |\Z))"
     matches = re.findall(pattern, text, re.MULTILINE)
     results = [(prev_level_info, match[0].strip(), lemmatize(match[1].strip())) for match in matches if match[1].strip()]
     return results
 
 # Функция для кластеризации и рекурсивной обработки заголовков
-def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
+def recursive_clustering(headings_content, nodes, num_hash, level=1, prev_num=None):
     print(f"\nКластеризация уровня {level}")
     if not headings_content or len(headings_content) < 2:
         print(f"Недостаточно данных для кластеризации на уровне {level}. Пропуск.")
@@ -62,34 +62,41 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
     vectorizer = TfidfVectorizer()
     X = vectorizer.fit_transform(contents)
 
-    # Определение оптимального количества кластеров
-    silhouette_scores = []
-    K = range(2, min(len(headings), 8))
+    if len(headings) == 1:
+        classified_headings = {i: [] for i in range(1)}
+        classified_headings[0].append(headings_content[0])
+    else:
+        if len(headings) != 2:
+            # Определение оптимального количества кластеров
+            silhouette_scores = []
+            K = range(2, min(len(headings), 8))
 
-    for k in K:
-        kmeans = KMeans(n_clusters=k, random_state=0)
+            for k in K:
+                kmeans = KMeans(n_clusters=k, random_state=0)
+                kmeans.fit(X)
+                score = silhouette_score(X, kmeans.labels_)
+                silhouette_scores.append(score)
+
+            # Проверка наличия оценок силуэта
+            if not silhouette_scores:
+                print(f"Недостаточно вариативности данных для кластеризации на уровне {level}. Пропуск.")
+                return
+
+            # Определение количества кластеров
+            optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
+            print(f'Оптимальное количество кластеров для уровня {level}: {optimal_k}')
+        else:
+            optimal_k = 2
+
+        # Кластеризация
+        kmeans = KMeans(n_clusters=optimal_k, random_state=0)
         kmeans.fit(X)
-        score = silhouette_score(X, kmeans.labels_)
-        silhouette_scores.append(score)
+        labels = kmeans.labels_
 
-    # Проверка наличия оценок силуэта
-    if not silhouette_scores:
-        print(f"Недостаточно вариативности данных для кластеризации на уровне {level}. Пропуск.")
-        return
-
-    # Определение количества кластеров
-    optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
-    print(f'Оптимальное количество кластеров для уровня {level}: {optimal_k}')
-
-    # Кластеризация
-    kmeans = KMeans(n_clusters=optimal_k, random_state=0)
-    kmeans.fit(X)
-    labels = kmeans.labels_
-
-    # Рекурсивная обработка
-    classified_headings = {i: [] for i in range(optimal_k)}
-    for i, label in enumerate(labels):
-        classified_headings[label].append(headings_content[i])
+        # Рекурсивная обработка
+        classified_headings = {i: [] for i in range(optimal_k)}
+        for i, label in enumerate(labels):
+            classified_headings[label].append(headings_content[i])
 
 
     # Вывод результатов и рекурсивный вызов для подзаголовков
@@ -103,7 +110,8 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
             headers.append(heading)
             new_prev_info = prev_info + '\n' + heading
             additional_info.append(new_prev_info)
-            sub_result = extract_headings_by_level(content, new_prev_info, level)
+            print(f"{heading = }")
+            sub_result = extract_headings_by_level(content, new_prev_info, num_hash)
             for res in sub_result:
                 sub_headings_content.append(res)
         node = {}
@@ -114,20 +122,20 @@ def recursive_clustering(headings_content, nodes, level=1, prev_num=None):
         node["info"] = copy.copy(additional_info)
         nodes[f"{level}_{cluster_id}_{prev_num}"] = node
         if sub_headings_content:
-            recursive_clustering(sub_headings_content, nodes, level + 1, prev_num=cluster_id)
+            recursive_clustering(sub_headings_content, nodes, num_hash + 1, level + 1, prev_num=cluster_id)
 
 
-def process_files(files, nodes, prev_num):
+def process_files(files, nodes, prev_num, level=2, num_hash=1):
     # Чтение и обработка указанных файлов
     top_level_headings_content = []
     for file_path in files:
         file_content = clean_markdown_content(f'./cache/{file_path}')
         print(f"\nФайл: {file_path}")
-        result = extract_headings_by_level(file_content, file_path, level=1)
+        result = extract_headings_by_level(file_content, file_path, num_hash=num_hash)
         for res in result:
             top_level_headings_content.append(res)
 
-    recursive_clustering(top_level_headings_content, nodes, level=2, prev_num=prev_num)
+    recursive_clustering(top_level_headings_content, nodes, num_hash=num_hash+1, level=level, prev_num=prev_num)
 
 
 def generate_json():
@@ -158,51 +166,57 @@ def generate_json():
     node["num"] = 0
     node["level"] = 0
     node["prev_num"] = None
-    node["data"] = file_names
-    node["info"] = file_names
+    node["data"] = [i[:-6] for i in file_names]
+    node["info"] = [i[:-6] for i in file_names]
     nodes["0_0_0"] = node
+    print(node['data'])
 
-    # Определение оптимального количества кластеров с помощью метода локтя
-    silhouette_scores = []
-    K = range(2, min(len(documents), 8))  
+    if len(documents) >= 2:
+        if len(documents) != 2:
+            # Определение оптимального количества кластеров с помощью метода локтя
+            silhouette_scores = []
+            K = range(2, min(len(documents), 8))  
 
-    for k in K:
-        kmeans = KMeans(n_clusters=k, random_state=0)
+            for k in K:
+                kmeans = KMeans(n_clusters=k, random_state=0)
+                kmeans.fit(X)
+                score = silhouette_score(X, kmeans.labels_)
+                silhouette_scores.append(score)
+        
+            # Выбор количества кластеров на основе максимального значения силуэта
+            optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
+            print(f'Оптимальное количество кластеров: {optimal_k}')
+        else:
+            optimal_k = 2
+        # Кластеризация с найденным оптимальным количеством кластеров
+        kmeans = KMeans(n_clusters=optimal_k, random_state=0)
         kmeans.fit(X)
-        score = silhouette_score(X, kmeans.labels_)
-        silhouette_scores.append(score)
-  
-    # Выбор количества кластеров на основе максимального значения силуэта
-    optimal_k = K[silhouette_scores.index(max(silhouette_scores))]
-    print(f'Оптимальное количество кластеров: {optimal_k}')
 
-    # Кластеризация с найденным оптимальным количеством кластеров
-    kmeans = KMeans(n_clusters=optimal_k, random_state=0)
-    kmeans.fit(X)
+        # Сохранение результатов кластеризации
+        classified_files = {i: [] for i in range(optimal_k)}
+        for i, label in enumerate(kmeans.labels_):
+            classified_files[label].append(file_names[i])
 
-    # Сохранение результатов кластеризации
-    classified_files = {i: [] for i in range(optimal_k)}
-    for i, label in enumerate(kmeans.labels_):
-        classified_files[label].append(file_names[i])
-
-    file_names = {}
-    for key, files in classified_files.items():
-        file_names[key] = []
-        for file_name in files:
-            file_names[key].append(file_name)
+        file_names = {}
+        for key, files in classified_files.items():
+            file_names[key] = []
+            for file_name in files:
+                file_names[key].append(file_name)
 
 
-    # Вывод результатов без названий категорий
-    for category, files in classified_files.items():
-        node = {}
-        print(f'Категория {category + 1}:')
-        node["num"] = category
-        node["level"] = 1
-        node["prev_num"] = 0
-        node["data"] = file_names[category]
-        node["info"] = file_names[category]
-        nodes[f"1_{category}_0"] = node
-        process_files(files, nodes, category)
+        # Вывод результатов без названий категорий
+        for category, files in classified_files.items():
+            node = {}
+            print(f'Категория {category + 1}:')
+            node["num"] = category
+            node["level"] = 1
+            node["prev_num"] = 0
+            node["data"] = [i[:-6] for i in file_names[category]]
+            node["info"] = [i[:-6] for i in file_names[category]]
+            nodes[f"1_{category}_0"] = node
+            process_files(files, nodes, category, level=2)
+    else:
+        process_files(file_names, nodes, 0, level=1)
 
     name_summarize(nodes, './prompt.txt')
 

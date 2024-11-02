@@ -54,6 +54,7 @@ def clear_cache_folder(uploaded_file_names):
         for file in uploaded_file_names:
             # TODO: переделать с pathlib
             os.remove(os.path.join("cache", file))
+    # st.session_state['file'] = []
 
     
 
@@ -66,6 +67,7 @@ def main():
         with st.spinner("Обработка файлов и генерация карты знаний..."):
             generate_json_output()  # Генерация JSON-файла
         clear_cache_folder(uploaded_file_names)
+
     
 
     with open('output.json', 'r', encoding="UTF-8") as json_file:
